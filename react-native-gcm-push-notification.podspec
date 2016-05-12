@@ -8,8 +8,9 @@ Pod::Spec.new do |spec|
   spec.license      = package["licence"]
   spec.homepage     = 'https://github.com/emroot/react-native-gcm-push-notification'
   spec.summary      = package["description"]
+  spec.author       = "Libin Lu"
   spec.source       = {
-    :git => 'https://github.com/emroot/react-native-gcm-push-notification',
+    :git => 'https://github.com/emroot/react-native-gcm-push-notification.git',
     :tag => spec.version
   }
   spec.source_files = 'RNGCM.{h,m}'
