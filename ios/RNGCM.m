@@ -52,21 +52,21 @@ RCT_EXPORT_MODULE()
 - (void)setBridge:(RCTBridge *)bridge
 {
   _bridge = bridge;
-  
+
   NSError* configureError;
   [[GGLContext sharedInstance] configureWithError:&configureError];
   NSAssert(!configureError, @"Error configuring Google services: %@", configureError);
-  
+
   GCMConfig *gcmConfig = [GCMConfig defaultConfig];
   gcmConfig.receiverDelegate = self;
   [[GCMService sharedInstance] startWithConfig:gcmConfig];
-  
+
   GGLInstanceIDConfig *instanceIDConfig = [GGLInstanceIDConfig defaultConfig];
   instanceIDConfig.delegate = self;
   // Start the GGLInstanceID shared instance with the that config and request a registration
   // token to enable reception of notifications
   [[GGLInstanceID sharedInstance] startWithConfig:instanceIDConfig];
-  
+
 
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(handleRemoteNotificationReceived:)
@@ -76,7 +76,7 @@ RCT_EXPORT_MODULE()
                                            selector:@selector(handleRemoteNotificationsRegistered:)
                                                name:GCMRemoteNotificationRegistered
                                              object:nil];
-  
+
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(disconnectGCM)
                                                name:UIApplicationDidEnterBackgroundNotification
@@ -105,30 +105,39 @@ RCT_EXPORT_MODULE()
   self.connectedToGCM = NO;
 }
 
-RCT_EXPORT_METHOD(requestPermissions)
+RCT_EXPORT_METHOD(requestPermissions:(NSDictionary *)permissions)
 {
   if (RCTRunningInAppExtension()) {
     return;
   }
-  
-  //UIApplication *app = RCTSharedApplication();
-  
+
+  UIUserNotificationType types = UIUserNotificationTypeNone;
+  if (permissions) {
+    if ([RCTConvert BOOL:permissions[@"alert"]]) {
+      types |= UIUserNotificationTypeAlert;
+    }
+    if ([RCTConvert BOOL:permissions[@"badge"]]) {
+      types |= UIUserNotificationTypeBadge;
+    }
+    if ([RCTConvert BOOL:permissions[@"sound"]]) {
+      types |= UIUserNotificationTypeSound;
+    }
+  } else {
+    types = UIUserNotificationTypeAlert | UIUserNotificationTypeBadge | UIUserNotificationTypeSound;
+  }
+
   if (floor(NSFoundationVersionNumber) <= NSFoundationVersionNumber_iOS_7_1) {
     // iOS 7.1 or earlier
-    UIRemoteNotificationType allNotificationTypes =
-    (UIRemoteNotificationTypeSound | UIRemoteNotificationTypeAlert | UIRemoteNotificationTypeBadge);
-    [[UIApplication sharedApplication] registerForRemoteNotificationTypes:allNotificationTypes];
+    [[UIApplication sharedApplication] registerForRemoteNotificationTypes:(NSUInteger)types];
   } else {
     // iOS 8 or later
     // [END_EXCLUDE]
-    UIUserNotificationType allNotificationTypes =
-    (UIUserNotificationTypeSound | UIUserNotificationTypeAlert | UIUserNotificationTypeBadge);
     UIUserNotificationSettings *settings =
-    [UIUserNotificationSettings settingsForTypes:allNotificationTypes categories:nil];
+    [UIUserNotificationSettings settingsForTypes:(NSUInteger)types categories:nil];
     [[UIApplication sharedApplication] registerUserNotificationSettings:settings];
     [[UIApplication sharedApplication] registerForRemoteNotifications];
   }
-  
+
 }
 
 - (void)handleRemoteNotificationReceived:(NSNotification *)notification
@@ -143,20 +152,20 @@ RCT_EXPORT_METHOD(requestPermissions)
   if([notification.userInfo objectForKey:@"deviceToken"] != nil){
     NSData* deviceToken = [notification.userInfo objectForKey:@"deviceToken"];
     __weak typeof(self) weakSelf = self;;
-    
+
     NSDictionary *registrationOptions = @{kGGLInstanceIDRegisterAPNSOption:deviceToken,
                                           kGGLInstanceIDAPNSServerTypeSandboxOption:@YES};
-    
+
     NSString* gcmSenderID = [[[GGLContext sharedInstance] configuration] gcmSenderID];
-    
+
     [[GGLInstanceID sharedInstance] tokenWithAuthorizedEntity:gcmSenderID scope:kGGLInstanceIDScopeGCM options:registrationOptions
                                                       handler:^(NSString *token, NSError *error){
                                                         if (token != nil) {
                                                           NSLog(@"Registration Token: %@", token);
-                                                          
+
                                                           weakSelf.connectedToGCM = YES;
                                                           registrationToken = token;
-                                                          
+
                                                           NSDictionary *userInfo = @{@"registrationToken":token};
                                                           [_bridge.eventDispatcher sendDeviceEventWithName:GCMRemoteNotificationRegistered
                                                                                                       body:userInfo];
@@ -171,11 +180,24 @@ RCT_EXPORT_METHOD(requestPermissions)
     [_bridge.eventDispatcher sendDeviceEventWithName:GCMRemoteNotificationRegistered
                                                 body:notification.userInfo];
   }
-  
+
 }
 
 -(void)onTokenRefresh {
-  [self requestPermissions];
+  NSUInteger types = 0;
+  if ([UIApplication instancesRespondToSelector:@selector(currentUserNotificationSettings)]) {
+    types = [[UIApplication sharedApplication] currentUserNotificationSettings].types;
+  } else {
+#if __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_8_0
+    types = [[UIApplication sharedApplication] enabledRemoteNotificationTypes];
+#endif
+  }
+
+  [self requestPermissions: @{
+    @"alert": @((types & UIUserNotificationTypeAlert) > 0),
+    @"badge": @((types & UIUserNotificationTypeBadge) > 0),
+    @"sound": @((types & UIUserNotificationTypeSound) > 0),
+  }];
 }
 
 
