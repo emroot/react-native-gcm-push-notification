@@ -27,6 +27,7 @@
 NSString *const GCMRemoteNotificationReceived = @"GCMRemoteNotificationReceived";
 NSString *const GCMRemoteNotificationRegistered = @"GCMRemoteNotificationRegistered";
 NSString *const GCMTopicSubscribed = @"GCMTopicSubscribed";
+BOOL *const isSandbox;
 
 
 @implementation RNGCM
@@ -151,10 +152,17 @@ RCT_EXPORT_METHOD(requestPermissions:(NSDictionary *)permissions)
 {
   if([notification.userInfo objectForKey:@"deviceToken"] != nil){
     NSData* deviceToken = [notification.userInfo objectForKey:@"deviceToken"];
-    __weak typeof(self) weakSelf = self;;
+    __weak typeof(self) weakSelf = self;
+    BOOL useSandbox;
+
+#ifdef DEBUG
+      useSandbox = YES;
+#else
+      useSandbox = NO;
+#endif
 
     NSDictionary *registrationOptions = @{kGGLInstanceIDRegisterAPNSOption:deviceToken,
-                                          kGGLInstanceIDAPNSServerTypeSandboxOption:@YES};
+                                          kGGLInstanceIDAPNSServerTypeSandboxOption: @(useSandbox)};
 
     NSString* gcmSenderID = [[[GGLContext sharedInstance] configuration] gcmSenderID];
 
