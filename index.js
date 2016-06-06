@@ -7,6 +7,7 @@ import React, {
   Platform,
   PushNotificationIOS,
 } from 'react-native';
+const { OS } = Platform;
 
 let GcmNativeModule = NativeModules.RNGCM;
 if (Platform.OS === 'android') {
@@ -16,13 +17,18 @@ if (Platform.OS === 'android') {
 // Constants
 const EVENT_NOTIFICATION_RECEIVED: string = 'GCMRemoteNotificationReceived';
 const EVENT_NOTIFICATION_REGISTERED: string = 'GCMRemoteNotificationRegistered';
+const LISTENER_TYPE_LOCAL_NOTIFICATION: string = 'localNotification';
 const LISTENER_TYPE_NOTIFICATION: string = 'notification';
 const LISTENER_TYPE_REGISTER: string = 'register';
-const LISTENER_TYPES: Array = [LISTENER_TYPE_NOTIFICATION, LISTENER_TYPE_REGISTER];
+const LISTENER_TYPES: Array = [
+  LISTENER_TYPE_LOCAL_NOTIFICATION,
+  LISTENER_TYPE_NOTIFICATION,
+  LISTENER_TYPE_REGISTER,
+];
 
 function isFromBackground(isInForeground = null) {
   if(isInForeground === null) {
-    if (Platform.OS === 'ios') {
+    if (OS === 'ios') {
       isInForeground = AppState.currentState === 'active';
     }
   }
@@ -45,6 +51,11 @@ class GcmPushNotification {
         EVENT_NOTIFICATION_REGISTERED,
         registrationInfo => handler(registrationInfo)
       );
+    } else if (type === LISTENER_TYPE_LOCAL_NOTIFICATION && OS === 'ios') {
+      listener = PushNotificationIOS.addEventListener(
+        LISTENER_TYPE_LOCAL_NOTIFICATION,
+        notification => handler(new GcmPushNotification(notification.getData()))
+      );
     }
     GcmPushNotification.handlers.set(handler, listener);
   }
@@ -52,8 +63,11 @@ class GcmPushNotification {
   static removeEventListener(type: string, handler: Function) {
     const listener = GcmPushNotification.handlers.get(handler);
     if (!listener) return;
-
-    listener.remove();
+    if (type === LISTENER_TYPE_LOCAL_NOTIFICATION && OS === 'ios') {
+      PushNotificationIOS.removeEventListener(type, handler);
+    } else {
+      listener.remove();
+    }
     GcmPushNotification.handlers.delete(handler);
   }
 
@@ -76,27 +90,42 @@ class GcmPushNotification {
     GcmNativeModule.unsubscribeTopic(topic, callback)
   }
 
+  static createLocalNotification(data: Object) {
+    if (OS === 'ios') {
+      PushNotificationIOS.presentLocalNotification({
+        alertBody: data.message,
+        category: data.category || 'default',
+        userInfo: data.userInfo,
+      });
+    } else if (OS === 'android') {
+      GcmNativeModule.createNotification({
+        category: data.category || 'default',
+        message: data.message,
+      });
+    }
+  }
+
   /* iOS specific starts */
   static setApplicationIconBadgeNumber(n: number) {
-    if (Platform.OS === 'ios') {
+    if (OS === 'ios') {
       return PushNotificationIOS.setApplicationIconBadgeNumber(n);
     }
   }
 
   static getApplicationIconBadgeNumber() {
-    if (Platform.OS === 'ios') {
+    if (OS === 'ios') {
       return PushNotificationIOS.getApplicationIconBadgeNumber();
     }
   }
 
   static checkPermissions(callback: Function) {
-    if (Platform.OS === 'ios') {
+    if (OS === 'ios') {
       return PushNotificationIOS.checkPermissions(callback);
     }
   }
 
   static abandonPermissions() {
-    if (Platform.OS === 'ios') {
+    if (OS === 'ios') {
       return PushNotificationIOS.abandonPermissions();
     }
   }
@@ -104,12 +133,12 @@ class GcmPushNotification {
 
   /* Android specific starts */
   static stopService() {
-    if (Platform.OS === 'android') {
+    if (OS === 'android') {
       GcmNativeModule.stopService();
     }
   }
   static createNotification(infos) {
-    if (Platform.OS === 'android') {
+    if (OS === 'android') {
       GcmNativeModule.createNotification(infos);
     }
   }
@@ -117,7 +146,7 @@ class GcmPushNotification {
 
   constructor(data: Object) {
     // Parse the notification on android devices
-    if (Platform.OS === 'android') {
+    if (OS === 'android') {
       data = JSON.parse(data.dataJSON);
     }
     this.data = Object.assign({}, data, {
